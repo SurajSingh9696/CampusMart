@@ -8,12 +8,14 @@ const manrope = Manrope({
   subsets: ["latin"],
   variable: "--font-body",
   display: "swap",
+  preload: false,
 });
 
 const sora = Sora({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -37,7 +39,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${manrope.variable} ${sora.variable} h-full`}>
+    <html
+      lang="en"
+      className={`${manrope.variable} ${sora.variable} h-full`}
+      data-scroll-behavior="smooth"
+    >
       <head>
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"

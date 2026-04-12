@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatedTabs3D } from "@/components/ui/AnimatedTabs3D";
 import { StatCard } from "@/components/ui/StatCard";
 import { BookOpenText, Heart, Package, Ticket } from "lucide-react";
@@ -22,6 +22,11 @@ type Props = {
   wishlistKeys: string[];
 };
 
+type CollegeLookup = {
+  name: string;
+  shortCode: string;
+};
+
 function ListingGrid({
   data,
   selectedCampus,
@@ -31,6 +36,8 @@ function ListingGrid({
   wishlist,
   onToggleWishlist,
   onBuy,
+  formatCampus,
+  normalizeCampus,
 }: {
   data: Listing[];
   selectedCampus: string;
@@ -40,9 +47,12 @@ function ListingGrid({
   wishlist: Set<string>;
   onToggleWishlist: (item: Listing) => void;
   onBuy: (item: Listing) => void;
+  formatCampus: (campus: string) => string;
+  normalizeCampus: (campus: string) => string;
 }) {
   const filtered = useMemo(() => {
-    const byCampus = selectedCampus === "Global" ? data : data.filter((l) => l.campus === selectedCampus);
+    const effectiveSelectedCampus = selectedCampus === "Global" ? "Global" : normalizeCampus(selectedCampus);
+    const byCampus = effectiveSelectedCampus === "Global" ? data : data.filter((l) => l.campus === effectiveSelectedCampus);
     const byQuery = byCampus.filter((l) => l.title.toLowerCase().includes(query.toLowerCase()));
 
     return byQuery.sort((a, b) => {
@@ -50,11 +60,13 @@ function ListingGrid({
       if (sortBy === "price_desc") return b.price - a.price;
       return 0;
     });
-  }, [data, selectedCampus, query, sortBy]);
+  }, [data, normalizeCampus, query, selectedCampus, sortBy]);
+
+  const effectiveSelectedCampus = selectedCampus === "Global" ? "Global" : normalizeCampus(selectedCampus);
 
   return (
     <div className="space-y-3">
-      {selectedCampus !== "Global" && selectedCampus !== userCampus ? (
+      {effectiveSelectedCampus !== "Global" && effectiveSelectedCampus !== userCampus ? (
         <p className="rounded-xl px-3 py-2 text-sm" style={{ background: "var(--warning-bg)", border: "1px solid #facc9a", color: "#9a580b" }}>
           You selected another campus. You may need to travel for pickup or event attendance.
         </p>
@@ -75,7 +87,7 @@ function ListingGrid({
             </div>
             <h3 className="mt-2 text-lg font-bold text-slate-900">{item.title}</h3>
             <p className="mt-1 line-clamp-2 text-sm text-slate-600">{item.description}</p>
-            <p className="mt-3 text-sm text-slate-500">Campus: {item.campus}</p>
+            <p className="mt-3 text-sm text-slate-500">Campus: {formatCampus(item.campus)}</p>
             <p className="mt-1 text-xl font-black text-slate-900">
               {item.isFree ? "Free" : `Rs ${item.price.toFixed(2)}`}
             </p>
@@ -104,6 +116,52 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
   const [sortBy, setSortBy] = useState<"newest" | "price_asc" | "price_desc">("newest");
   const [status, setStatus] = useState("");
   const [wishlist, setWishlist] = useState(new Set(wishlistKeys));
+  const [campusLookup, setCampusLookup] = useState<Record<string, string>>({});
+  const [campusCanonicalLookup, setCampusCanonicalLookup] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCampusLookup = async () => {
+      try {
+        const response = await fetch("/api/colleges?active=true", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const data = (await response.json()) as { colleges?: CollegeLookup[] };
+        const map: Record<string, string> = {};
+        const canonicalMap: Record<string, string> = {};
+
+        for (const college of data.colleges || []) {
+          if (!college.name || !college.shortCode) continue;
+          map[college.name] = college.shortCode;
+          map[college.shortCode] = college.shortCode;
+          canonicalMap[college.name] = college.name;
+          canonicalMap[college.shortCode] = college.name;
+        }
+
+        if (mounted) {
+          setCampusLookup(map);
+          setCampusCanonicalLookup(canonicalMap);
+        }
+      } catch {
+        if (mounted) {
+          setCampusLookup({});
+          setCampusCanonicalLookup({});
+        }
+      }
+    };
+
+    void loadCampusLookup();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const formatCampus = (campus: string) => campusLookup[campus] || campus;
+  const normalizeCampus = (campus: string) => campusCanonicalLookup[campus] || campus;
+  const normalizedUserCampus = normalizeCampus(userCampus);
+  const selectedCampusValue = selectedCampus === "Global" ? "Global" : normalizeCampus(selectedCampus);
 
   const products = listings.filter((l) => l.type === "product");
   const projects = listings.filter((l) => l.type === "project");
@@ -166,15 +224,17 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm text-slate-600">Viewing Campus</label>
           <select
-            value={selectedCampus}
+            value={selectedCampusValue}
             onChange={(e) => setSelectedCampus(e.target.value)}
+            title="Viewing campus"
+            aria-label="Viewing campus"
             className="rounded-xl px-3 py-2 text-sm"
             style={{ border: "1px solid var(--border)", background: "var(--surface-2)" }}
           >
             <option value="Global">Global</option>
             {Array.from(new Set(listings.map((l) => l.campus))).map((campus) => (
               <option key={campus} value={campus}>
-                {campus}
+                {formatCampus(campus)}
               </option>
             ))}
           </select>
@@ -188,6 +248,8 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as "newest" | "price_asc" | "price_desc")}
+            title="Sort listings"
+            aria-label="Sort listings"
             className="rounded-xl px-3 py-2 text-sm"
             style={{ border: "1px solid var(--border)", background: "var(--surface-2)" }}
           >
@@ -195,7 +257,7 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
             <option value="price_asc">Sort: Price Low to High</option>
             <option value="price_desc">Sort: Price High to Low</option>
           </select>
-          <p className="text-xs text-slate-500">Your home campus: {userCampus}</p>
+          <p className="text-xs text-slate-500">Your home campus: {formatCampus(userCampus)}</p>
         </div>
         {status ? <p className="mt-2 text-sm text-slate-700">{status}</p> : null}
       </section>
@@ -208,13 +270,15 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
             content: (
               <ListingGrid
                 data={products}
-                selectedCampus={selectedCampus}
-                userCampus={userCampus}
+                selectedCampus={selectedCampusValue}
+                userCampus={normalizedUserCampus}
                 query={query}
                 sortBy={sortBy}
                 wishlist={wishlist}
                 onToggleWishlist={onToggleWishlist}
                 onBuy={onBuy}
+                formatCampus={formatCampus}
+                normalizeCampus={normalizeCampus}
               />
             ),
           },
@@ -224,13 +288,15 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
             content: (
               <ListingGrid
                 data={projects}
-                selectedCampus={selectedCampus}
-                userCampus={userCampus}
+                selectedCampus={selectedCampusValue}
+                userCampus={normalizedUserCampus}
                 query={query}
                 sortBy={sortBy}
                 wishlist={wishlist}
                 onToggleWishlist={onToggleWishlist}
                 onBuy={onBuy}
+                formatCampus={formatCampus}
+                normalizeCampus={normalizeCampus}
               />
             ),
           },
@@ -240,13 +306,15 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
             content: (
               <ListingGrid
                 data={notes}
-                selectedCampus={selectedCampus}
-                userCampus={userCampus}
+                selectedCampus={selectedCampusValue}
+                userCampus={normalizedUserCampus}
                 query={query}
                 sortBy={sortBy}
                 wishlist={wishlist}
                 onToggleWishlist={onToggleWishlist}
                 onBuy={onBuy}
+                formatCampus={formatCampus}
+                normalizeCampus={normalizeCampus}
               />
             ),
           },
@@ -256,13 +324,15 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
             content: (
               <ListingGrid
                 data={events}
-                selectedCampus={selectedCampus}
-                userCampus={userCampus}
+                selectedCampus={selectedCampusValue}
+                userCampus={normalizedUserCampus}
                 query={query}
                 sortBy={sortBy}
                 wishlist={wishlist}
                 onToggleWishlist={onToggleWishlist}
                 onBuy={onBuy}
+                formatCampus={formatCampus}
+                normalizeCampus={normalizeCampus}
               />
             ),
           },

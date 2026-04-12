@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const protectedPrefixes = ["/dashboard", "/api/admin", "/api/listings", "/api/payment"];
+const protectedPrefixes = [
+  "/dashboard",
+  "/admin",
+  "/customer",
+  "/seller",
+  "/api/admin",
+  "/api/listings",
+  "/api/payment",
+  "/api/profile",
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -27,7 +36,26 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(blockedUrl);
   }
 
-  if (token.role === "seller" && token.sellerApprovalStatus !== "approved" && pathname.startsWith("/dashboard/seller")) {
+  if (pathname.startsWith("/admin") && token.role !== "admin") {
+    const loginUrl = new URL("/auth/login", request.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (pathname.startsWith("/customer") && token.role !== "customer") {
+    const loginUrl = new URL("/auth/login", request.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (pathname.startsWith("/seller") && token.role !== "seller") {
+    const loginUrl = new URL("/auth/login", request.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (
+    token.role === "seller" &&
+    token.sellerApprovalStatus !== "approved" &&
+    (pathname.startsWith("/dashboard/seller") || pathname.startsWith("/seller"))
+  ) {
     const pendingUrl = new URL("/pending-approval", request.url);
     return NextResponse.redirect(pendingUrl);
   }
@@ -36,5 +64,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/api/admin/:path*", "/api/listings/:path*", "/api/payment/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/admin/:path*",
+    "/customer/:path*",
+    "/seller/:path*",
+    "/api/admin/:path*",
+    "/api/listings/:path*",
+    "/api/payment/:path*",
+    "/api/profile/:path*",
+  ],
 };

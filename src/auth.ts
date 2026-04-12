@@ -42,12 +42,13 @@ export const authOptions: NextAuthOptions = {
           isBlocked: user.isBlocked,
           accountNumber: user.accountNumber,
           campus: user.campus,
+          profileImageId: user.profileImageId ? user.profileImageId.toString() : undefined,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -55,7 +56,29 @@ export const authOptions: NextAuthOptions = {
         token.isBlocked = user.isBlocked;
         token.accountNumber = user.accountNumber;
         token.campus = user.campus;
+        token.profileImageId = user.profileImageId;
       }
+
+      if (trigger === "update" && session) {
+        const updatedSession = session as {
+          name?: string;
+          campus?: string;
+          profileImageId?: string | null;
+        };
+
+        if (typeof updatedSession.name === "string") {
+          token.name = updatedSession.name;
+        }
+        if (typeof updatedSession.campus === "string") {
+          token.campus = updatedSession.campus;
+        }
+        if (updatedSession.profileImageId === null || updatedSession.profileImageId === "") {
+          token.profileImageId = undefined;
+        } else if (typeof updatedSession.profileImageId === "string") {
+          token.profileImageId = updatedSession.profileImageId;
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -66,6 +89,7 @@ export const authOptions: NextAuthOptions = {
         session.user.isBlocked = token.isBlocked;
         session.user.accountNumber = token.accountNumber;
         session.user.campus = token.campus;
+        session.user.profileImageId = token.profileImageId as string | undefined;
       }
       return session;
     },

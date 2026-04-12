@@ -6,6 +6,7 @@ import { CustomerDashboardClient } from "@/components/customer/CustomerDashboard
 import { getUnifiedLiveFeed } from "@/lib/data/market-feed";
 import { connectDB } from "@/lib/db";
 import { WishlistItem } from "@/models/WishlistItem";
+import { User } from "@/models/User";
 
 export default async function CustomerDashboardPage() {
   const session = await getServerSession(authOptions);
@@ -15,7 +16,12 @@ export default async function CustomerDashboardPage() {
 
   const listings = await getUnifiedLiveFeed(40);
   await connectDB();
-  const wishlist = await WishlistItem.find({ userId: session.user.id }).lean();
+  const [wishlist, userRecord] = await Promise.all([
+    WishlistItem.find({ userId: session.user.id }).lean(),
+    User.findById(session.user.id).select("campus").lean(),
+  ]);
+
+  const userCampus = userRecord?.campus || session.user.campus || "";
 
   return (
     <AppShell
@@ -31,7 +37,7 @@ export default async function CustomerDashboardPage() {
     >
       <CustomerDashboardClient
         listings={listings}
-        userCampus={session.user.campus}
+        userCampus={userCampus}
         wishlistKeys={wishlist.map((w) => `${w.itemType}:${w.listingId}`)}
       />
     </AppShell>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useSpring } from "framer-motion";
 import { useSession } from "next-auth/react";
 
 type College = { _id: string; name: string; shortCode: string };
@@ -45,6 +45,13 @@ const stats = [
   { label: "Safe Transactions", value: "100%" },
 ];
 
+const navLinks = [
+  { label: "Home", href: "#home" },
+  { label: "Marketplace", href: "#marketplace" },
+  { label: "How It Works", href: "#portals" },
+  { label: "Safety", href: "#safety" },
+];
+
 export default function LandingPage() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
@@ -53,6 +60,25 @@ export default function LandingPage() {
   const [colleges, setColleges] = useState<College[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const heroTiltX = useMotionValue(0);
+  const heroTiltY = useMotionValue(0);
+  const smoothHeroTiltX = useSpring(heroTiltX, { stiffness: 190, damping: 18, mass: 0.7 });
+  const smoothHeroTiltY = useSpring(heroTiltY, { stiffness: 190, damping: 18, mass: 0.7 });
+
+  const handleHeroCardMove = (event: MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const relativeX = (event.clientX - rect.left) / rect.width;
+    const relativeY = (event.clientY - rect.top) / rect.height;
+    const maxTilt = 14;
+
+    heroTiltX.set((0.5 - relativeY) * maxTilt * 2);
+    heroTiltY.set((relativeX - 0.5) * maxTilt * 2);
+  };
+
+  const resetHeroCardTilt = () => {
+    heroTiltX.set(0);
+    heroTiltY.set(0);
+  };
 
   useEffect(() => {
     fetch("/api/colleges?active=true")
@@ -65,7 +91,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen text-slate-800 overflow-x-hidden">
+    <div id="home" className="min-h-screen text-slate-800 overflow-x-hidden">
       <nav
         className="sticky top-0 z-50 w-full transition-all duration-300"
         style={{
@@ -88,13 +114,13 @@ export default function LandingPage() {
             </Link>
 
             <div className="hidden lg:flex items-center gap-1">
-              {["Home", "Marketplace", "How It Works", "Safety"].map((label) => (
+              {navLinks.map((item) => (
                 <a
-                  key={label}
-                  href={label === "Home" ? "#" : label === "How It Works" ? "#features" : "#"}
+                  key={item.label}
+                  href={item.href}
                   className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all"
                 >
-                  {label}
+                  {item.label}
                 </a>
               ))}
             </div>
@@ -130,14 +156,14 @@ export default function LandingPage() {
             exit={{ opacity: 0, y: -8 }}
             className="fixed inset-0 z-40 bg-white pt-20 px-6 flex flex-col gap-4"
           >
-            {["Home", "Marketplace", "How It Works", "Safety"].map((label) => (
+            {navLinks.map((item) => (
               <a
-                key={label}
-                href={label === "Home" ? "#" : label === "How It Works" ? "#features" : "#"}
+                key={item.label}
+                href={item.href}
                 onClick={() => setMenuOpen(false)}
                 className="text-xl font-bold text-slate-800 border-b border-slate-100 pb-4"
               >
-                {label}
+                {item.label}
               </a>
             ))}
             <div className="mt-4 flex flex-col gap-3">
@@ -199,7 +225,7 @@ export default function LandingPage() {
           </div>
 
           <div className="w-full max-w-sm">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-[0.15em] block mb-2">Select Your Campus</label>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-[0.15em] block mb-2">Check Your Campus</label>
             <div className="relative">
               <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xl pointer-events-none">school</span>
               <select
@@ -210,7 +236,11 @@ export default function LandingPage() {
               >
                 <option value="" disabled>Choose your campus</option>
                 {colleges.length > 0 ? (
-                  colleges.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)
+                  colleges.map((c) => (
+                    <option key={c._id} value={c.shortCode}>
+                      {c.shortCode}
+                    </option>
+                  ))
                 ) : (
                   <>
                     <option>SRMCEM</option>
@@ -224,8 +254,22 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <div className="order-1 lg:order-2">
-          <div className="card-3d rounded-3xl p-6 lg:p-8" style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "var(--shadow-md)" }}>
+        <div className="order-1 lg:order-2 [perspective:1200px]">
+          <motion.div
+            className="card-3d rounded-3xl p-6 lg:p-8 will-change-transform"
+            onMouseMove={handleHeroCardMove}
+            onMouseLeave={resetHeroCardTilt}
+            whileHover={{ scale: 1.01 }}
+            transition={{ type: "spring", stiffness: 190, damping: 18 }}
+            style={{
+              rotateX: smoothHeroTiltX,
+              rotateY: smoothHeroTiltY,
+              transformStyle: "preserve-3d",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow-md)",
+            }}
+          >
             <div className="grid grid-cols-2 gap-4">
               {categories.map((cat) => (
                 <div key={cat.title} className="rounded-2xl p-4" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
@@ -237,7 +281,7 @@ export default function LandingPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -252,7 +296,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="features" className="max-w-7xl mx-auto px-5 sm:px-8 py-16">
+      <section id="marketplace" className="max-w-7xl mx-auto px-5 sm:px-8 py-16 scroll-mt-24">
         <div className="text-center mb-10">
           <h2 className="text-3xl lg:text-4xl font-black text-slate-900 mb-3">Marketplace Categories</h2>
           <p className="text-slate-600 max-w-2xl mx-auto">All role portals follow one unified UI so customers, sellers, and admins operate in a familiar, professional workspace.</p>
@@ -277,13 +321,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="max-w-7xl mx-auto px-5 sm:px-8 py-14">
+      <section id="portals" className="max-w-7xl mx-auto px-5 sm:px-8 py-14 scroll-mt-24">
         <div className="card p-8 lg:p-10" style={{ background: "linear-gradient(135deg, #edf4ff 0%, #f7fbff 100%)" }}>
-          <div className="grid md:grid-cols-3 gap-5">
+          <div className="grid md:grid-cols-2 gap-5">
             {[
               { icon: "person", title: "Customer Portal", desc: "Browse products, projects, notes, and events with smart search and wishlists.", link: "/auth/register/customer" },
               { icon: "storefront", title: "Seller Portal", desc: "Upload listings, manage orders, and track performance in one clean dashboard.", link: "/auth/register/seller" },
-              { icon: "admin_panel_settings", title: "Admin Portal", desc: "Approve sellers, moderate listings, and govern platform operations.", link: "/auth/login" },
             ].map((item) => (
               <div key={item.title} className="rounded-2xl bg-white p-6" style={{ border: "1px solid var(--border)" }}>
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: "var(--primary-subtle)" }}>
@@ -295,6 +338,45 @@ export default function LandingPage() {
                   Open Portal →
                 </Link>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="safety" className="max-w-7xl mx-auto px-5 sm:px-8 py-6 pb-14 scroll-mt-24">
+        <div className="card p-7 lg:p-10">
+          <div className="mb-8 text-center">
+            <h2 className="text-3xl lg:text-4xl font-black text-slate-900 mb-3">Safety First, Built Into Every Step</h2>
+            <p className="text-slate-600 max-w-3xl mx-auto">
+              CampusMart protects buyers and sellers with verified identities, role-based moderation, and accountable order workflows.
+            </p>
+          </div>
+
+          <div className="grid gap-5 md:grid-cols-3">
+            {[
+              {
+                icon: "verified_user",
+                title: "Verified Campus Accounts",
+                desc: "Students register with campus identity details so marketplace interactions remain trusted and traceable.",
+              },
+              {
+                icon: "gpp_good",
+                title: "Approval and Moderation",
+                desc: "Seller onboarding, listing approvals, and account governance help keep listings authentic and compliant.",
+              },
+              {
+                icon: "lock",
+                title: "Secure Transaction Flow",
+                desc: "Order states and controlled payment pathways provide clear audit trails and safer fulfillment across campuses.",
+              },
+            ].map((item) => (
+              <article key={item.title} className="rounded-2xl p-6 h-full bg-[var(--surface-2)] border border-[var(--border)]">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 bg-[var(--info-bg)]">
+                  <span className="material-symbols-outlined text-[var(--primary)]">{item.icon}</span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-2">{item.title}</h3>
+                <p className="text-sm text-slate-600 leading-relaxed">{item.desc}</p>
+              </article>
             ))}
           </div>
         </div>
@@ -312,9 +394,10 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="flex gap-6 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            {["Privacy", "Terms", "Safety", "Support"].map((item) => (
-              <a key={item} href="#" className="hover:text-slate-700 transition-colors">{item}</a>
-            ))}
+            <Link href="/privacy" className="hover:text-slate-700 transition-colors">Privacy</Link>
+            <Link href="/terms" className="hover:text-slate-700 transition-colors">Terms</Link>
+            <Link href="/safety" className="hover:text-slate-700 transition-colors">Safety</Link>
+            <Link href="/support" className="hover:text-slate-700 transition-colors">Support</Link>
           </div>
           <p className="text-xs text-slate-500">© 2026 CampusMart</p>
         </div>

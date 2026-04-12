@@ -6,17 +6,52 @@ import { Listing } from "@/models/Listing";
 import { Order } from "@/models/Order";
 import { WishlistItem } from "@/models/WishlistItem";
 import { Notification } from "@/models/Notification";
+import { User } from "@/models/User";
+import { College } from "@/models/College";
 import Link from "next/link";
 
-async function getDashboardData(userId: string, campus: string) {
+async function getDashboardData(userId: string) {
   await connectDB();
-  const [recentListings, ordersCount, wishlistCount, notificationsCount] = await Promise.all([
-    Listing.find({ status: "live", campus }).sort({ createdAt: -1 }).limit(6).lean(),
+
+  const user = await User.findById(userId).select("campus").lean();
+  const campusName = user?.campus?.trim() || "";
+
+  const college = campusName
+    ? await College.findOne({ $or: [{ name: campusName }, { shortCode: campusName }] }).select("name shortCode").lean()
+    : null;
+
+  const campusValues = college
+    ? Array.from(new Set([college.name, college.shortCode].filter((value): value is string => Boolean(value))))
+    : [campusName];
+
+  const listingFilter = { status: "live", campus: { $in: campusValues } };
+  const campusDisplayName = college?.shortCode || campusName;
+
+  const [recentListings, ordersCount, wishlistCount, notificationsCount, categoryCounts] = await Promise.all([
+    Listing.find(listingFilter).sort({ createdAt: -1 }).limit(6).lean(),
     Order.countDocuments({ buyerId: userId }),
     WishlistItem.countDocuments({ userId }),
     Notification.countDocuments({ userId, isRead: false }),
+    Listing.aggregate([
+      { $match: listingFilter },
+      { $group: { _id: "$type", count: { $sum: 1 } } },
+    ]),
   ]);
-  return { recentListings, ordersCount, wishlistCount, notificationsCount };
+
+  const countsByType = {
+    product: 0,
+    project: 0,
+    notes: 0,
+    event: 0,
+  };
+
+  for (const row of categoryCounts as Array<{ _id: string; count: number }>) {
+    if (row._id in countsByType) {
+      countsByType[row._id as keyof typeof countsByType] = row.count;
+    }
+  }
+
+  return { campusName: campusDisplayName, recentListings, ordersCount, wishlistCount, notificationsCount, countsByType };
 }
 
 export default async function CustomerDashboard() {
@@ -24,14 +59,20 @@ export default async function CustomerDashboard() {
   if (!session?.user) redirect("/auth/login");
   if (session.user.role !== "customer") redirect("/auth/login");
 
-  const { recentListings, ordersCount, wishlistCount, notificationsCount } = await getDashboardData(
-    session.user.id,
-    session.user.campus || ""
+  const { campusName, recentListings, ordersCount, wishlistCount, notificationsCount, countsByType } = await getDashboardData(
+    session.user.id
   );
+
+  const categoryCards = [
+    { href: "/customer/products", icon: "shopping_bag", label: "Products", color: "#2563eb", bg: "#eff6ff", count: countsByType.product },
+    { href: "/customer/projects", icon: "terminal", label: "Projects", color: "#1a73e8", bg: "#edf4ff", count: countsByType.project },
+    { href: "/customer/notes", icon: "menu_book", label: "Notes", color: "#d97706", bg: "#fffbeb", count: countsByType.notes },
+    { href: "/customer/events", icon: "local_activity", label: "Events", color: "#16a34a", bg: "#f0fdf4", count: countsByType.event },
+  ];
 
   const quickStats = [
     { label: "My Orders", value: ordersCount, icon: "inventory_2", color: "#2563eb", bg: "#eff6ff" },
-    { label: "Campus", value: "Active", icon: "school", color: "#1a73e8", bg: "#edf4ff" },
+    { label: "Campus", value: campusName || "Not Set", icon: "school", color: "#1a73e8", bg: "#edf4ff" },
     { label: "Wishlist", value: wishlistCount, icon: "favorite", color: "#ec4899", bg: "#fdf2f8" },
     { label: "Notifications", value: notificationsCount, icon: "notifications", color: "#d97706", bg: "#fffbeb" },
   ];
@@ -61,8 +102,8 @@ export default async function CustomerDashboard() {
               Hey, {session.user.name?.split(" ")[0]} 👋
             </h1>
             <p className="text-blue-100 mt-1 text-sm">
-              {session.user.campus ? (
-                <>Browsing <strong className="text-white">{session.user.campus}</strong> marketplace</>
+              {campusName ? (
+                <>Browsing <strong className="text-white">{campusName}</strong> marketplace</>
               ) : (
                 "Explore your campus marketplace"
               )}
@@ -104,12 +145,7 @@ export default async function CustomerDashboard() {
       <div>
         <h2 className="text-lg font-bold text-slate-900 mb-4">Browse Categories</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { href: "/customer/products", icon: "shopping_bag", label: "Products", color: "#2563eb", bg: "#eff6ff", count: "320+" },
-            { href: "/customer/projects", icon: "terminal", label: "Projects", color: "#1a73e8", bg: "#edf4ff", count: "45+" },
-            { href: "/customer/notes", icon: "menu_book", label: "Notes", color: "#d97706", bg: "#fffbeb", count: "180+" },
-            { href: "/customer/events", icon: "local_activity", label: "Events", color: "#16a34a", bg: "#f0fdf4", count: "12 live" },
-          ].map((cat) => (
+          {categoryCards.map((cat) => (
             <Link
               key={cat.href}
               href={cat.href}
@@ -136,7 +172,7 @@ export default async function CustomerDashboard() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-slate-900">
-            Latest in {session.user.campus || "Your Campus"}
+            Latest in {campusName || "Your Campus"}
           </h2>
           <Link
             href="/customer/products"

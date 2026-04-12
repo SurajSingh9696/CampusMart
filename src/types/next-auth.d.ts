@@ -10,6 +10,7 @@ declare module "next-auth" {
       isBlocked: boolean;
       accountNumber: string;
       campus: string;
+      profileImageId?: string;
     } & DefaultSession["user"];
   }
 
@@ -19,6 +20,7 @@ declare module "next-auth" {
     isBlocked: boolean;
     accountNumber: string;
     campus: string;
+    profileImageId?: string;
   }
 }
 
@@ -30,5 +32,6 @@ declare module "next-auth/jwt" {
     isBlocked: boolean;
     accountNumber: string;
     campus: string;
+    profileImageId?: string;
   }
 }

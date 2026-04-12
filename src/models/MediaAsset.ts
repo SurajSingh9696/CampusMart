@@ -4,7 +4,7 @@ const mediaAssetSchema = new Schema(
   {
     fileName: { type: String, required: true },
     contentType: { type: String, required: true },
-    size: { type: Number, required: true, max: 500 * 1024 },
+    size: { type: Number, required: true, max: 1024 * 1024 },
     data: { type: Buffer, required: true },
     purpose: { type: String, default: "general" },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User" },

@@ -3,7 +3,9 @@ import { z } from "zod";
 import { connectDB } from "@/lib/db";
 import { MediaAsset } from "@/models/MediaAsset";
 
-const MAX_IMAGE_SIZE = 500 * 1024;
+const DEFAULT_MAX_IMAGE_SIZE = 500 * 1024;
+const PROFILE_MAX_IMAGE_SIZE = 1024 * 1024;
+const profilePurposes = new Set(["customer_profile", "seller_profile", "profile_avatar"]);
 const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const schema = z.object({
@@ -41,9 +43,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only JPEG, PNG, and WEBP are allowed" }, { status: 400 });
     }
 
+    const maxSize = profilePurposes.has(data.purpose) ? PROFILE_MAX_IMAGE_SIZE : DEFAULT_MAX_IMAGE_SIZE;
     const byteLength = Buffer.byteLength(parsed.payload, "base64");
-    if (byteLength > MAX_IMAGE_SIZE) {
-      return NextResponse.json({ error: "Image exceeds 500KB limit" }, { status: 413 });
+    if (byteLength > maxSize) {
+      const maxLabel = maxSize === PROFILE_MAX_IMAGE_SIZE ? "1MB" : "500KB";
+      return NextResponse.json({ error: `Image exceeds ${maxLabel} limit` }, { status: 413 });
     }
 
     const buffer = Buffer.from(parsed.payload, "base64");

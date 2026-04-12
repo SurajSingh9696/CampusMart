@@ -17,7 +17,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Media not found" }, { status: 404 });
   }
 
-  const payload = media.data.buffer as ArrayBuffer;
+  // Lean documents can surface binary data in multiple shapes depending on driver/runtime.
+  const binaryData = media.data as unknown as Buffer | Uint8Array | ArrayBuffer | { buffer: ArrayBufferLike };
+  const bytes = Buffer.isBuffer(binaryData)
+    ? new Uint8Array(binaryData)
+    : binaryData instanceof Uint8Array
+      ? binaryData
+      : binaryData instanceof ArrayBuffer
+        ? new Uint8Array(binaryData)
+        : new Uint8Array(binaryData.buffer);
+  const payload = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(payload).set(bytes);
 
   return new Response(payload, {
     headers: {

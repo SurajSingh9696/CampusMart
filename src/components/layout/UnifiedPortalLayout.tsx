@@ -47,11 +47,13 @@ export function UnifiedPortalLayout({
     name?: string;
     email?: string;
     campus?: string;
+    profileImageId?: string;
   };
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [campusBadgeLabel, setCampusBadgeLabel] = useState("");
 
   const pageTitle = useMemo(() => {
     const segment = pathname.split("/").pop() || "dashboard";
@@ -86,6 +88,46 @@ export function UnifiedPortalLayout({
       window.removeEventListener("notifications:refresh", onRefresh);
     };
   }, [notificationHref]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const currentCampus = user?.campus || "";
+    setCampusBadgeLabel(currentCampus);
+
+    if (!currentCampus) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const loadCampusShortCode = async () => {
+      try {
+        const response = await fetch("/api/colleges?active=true", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const data = (await response.json()) as {
+          colleges?: Array<{ name?: string; shortCode?: string }>;
+        };
+
+        const match = data.colleges?.find(
+          (college) => college.name === currentCampus || college.shortCode === currentCampus
+        );
+
+        if (mounted) {
+          setCampusBadgeLabel(match?.shortCode || currentCampus);
+        }
+      } catch {
+        if (mounted) setCampusBadgeLabel(currentCampus);
+      }
+    };
+
+    void loadCampusShortCode();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.campus]);
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
@@ -135,7 +177,7 @@ export function UnifiedPortalLayout({
               <span className="material-symbols-outlined text-sm" style={{ color: "var(--primary)" }}>
                 school
               </span>
-              <span className="text-xs font-bold text-slate-700 line-clamp-1">{user.campus}</span>
+              <span className="text-xs font-bold text-slate-700 line-clamp-1">{campusBadgeLabel || user.campus}</span>
             </div>
           </div>
         )}
@@ -193,10 +235,19 @@ export function UnifiedPortalLayout({
               className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-100 transition-colors"
             >
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white text-sm shrink-0"
+                className="w-10 h-10 rounded-full flex items-center justify-center font-black text-white text-sm shrink-0 overflow-hidden"
                 style={{ background: "linear-gradient(135deg, var(--primary), var(--primary-dark))" }}
               >
-                {user?.name?.charAt(0).toUpperCase() || "U"}
+                {user?.profileImageId ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/api/media/${user.profileImageId}`}
+                    alt="Profile"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  user?.name?.charAt(0).toUpperCase() || "U"
+                )}
               </div>
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-bold text-slate-900 truncate">{user?.name || "User"}</p>

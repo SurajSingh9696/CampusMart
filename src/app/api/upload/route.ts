@@ -1,13 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
-import { v2 as cloudinary } from "cloudinary";
+import { connectDB } from "@/lib/db";
+import { MediaAsset } from "@/models/MediaAsset";
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+const IMAGE_MAX_SIZE = 1 * 1024 * 1024;
+const DOCUMENT_MAX_SIZE = 10 * 1024 * 1024;
+
+const ZIP_EXTENSIONS = [".zip", ".rar", ".7z", ".tar", ".gz", ".tgz"];
+
+function isPdf(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function isArchive(file: File) {
+  const name = file.name.toLowerCase();
+  const byExtension = ZIP_EXTENSIONS.some((ext) => name.endsWith(ext));
+  const byMime = [
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-7z-compressed",
+    "application/x-rar-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-gzip",
+  ].includes(file.type);
+
+  return byExtension || byMime;
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -24,34 +44,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const maxSize = 20 * 1024 * 1024; // 20MB
+    const maxSize = type === "image" ? IMAGE_MAX_SIZE : DOCUMENT_MAX_SIZE;
+
     if (file.size > maxSize) {
-      return NextResponse.json({ error: "File too large (max 20MB)" }, { status: 413 });
+      const maxLabel = maxSize === IMAGE_MAX_SIZE ? "1MB" : "10MB";
+      return NextResponse.json({ error: `File too large (max ${maxLabel})` }, { status: 413 });
+    }
+
+    if (type === "image" && !file.type.startsWith("image/")) {
+      return NextResponse.json({ error: "Only image files are allowed" }, { status: 400 });
+    }
+    if (type === "pdf" && !isPdf(file)) {
+      return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
+    }
+    if (type === "zip" && !isArchive(file)) {
+      return NextResponse.json({ error: "Only archive files (.zip/.rar/.7z/.tar/.gz) are allowed" }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
+    const originalBuffer = Buffer.from(bytes);
+    // Convert to base64 payload before persisting in MongoDB.
+    const base64Payload = originalBuffer.toString("base64");
+    const bufferForStorage = Buffer.from(base64Payload, "base64");
 
-    let resourceType: "image" | "video" | "raw" = "image";
-    let folder = "campusmart/images";
-
-    if (type === "pdf" || type === "zip") {
-      resourceType = "raw";
-      folder = `campusmart/${type}s`;
-    } else if (type === "video") {
-      resourceType = "video";
-      folder = "campusmart/videos";
-    }
-
-    const result = await cloudinary.uploader.upload(base64, {
-      folder,
-      resource_type: resourceType,
-      use_filename: true,
-      unique_filename: true,
+    await connectDB();
+    const mediaDoc = await MediaAsset.create({
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+      size: bufferForStorage.byteLength,
+      data: bufferForStorage,
+      purpose: `listing_${type}`,
+      uploadedBy: session.user.id,
     });
 
-    return NextResponse.json({ url: result.secure_url, publicId: result.public_id });
+    return NextResponse.json({
+      url: `/api/media/${mediaDoc._id.toString()}`,
+      mediaId: mediaDoc._id.toString(),
+    });
   } catch (err) {
     console.error("[upload POST]", err);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });

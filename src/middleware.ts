@@ -11,10 +11,10 @@ export default withAuth(
       return NextResponse.redirect(new URL("/blocked", req.url));
     }
 
-    // Seller pending approval
+    // Seller verification gate
     if (
       token?.role === "seller" &&
-      token?.sellerApprovalStatus === "pending" &&
+      token?.sellerApprovalStatus !== "approved" &&
       pathname.startsWith("/seller") &&
       !pathname.startsWith("/pending-approval")
     ) {

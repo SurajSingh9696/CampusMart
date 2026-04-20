@@ -20,6 +20,9 @@ type Note = {
 
 const SORT_OPTIONS = [
   { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
+  { value: "popular", label: "Most Popular" },
+  { value: "title_asc", label: "Title: A to Z" },
   { value: "price_asc", label: "Price: Low → High" },
   { value: "price_desc", label: "Price: High → Low" },
 ];

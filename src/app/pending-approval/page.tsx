@@ -31,14 +31,14 @@ export default function PendingApprovalPage() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
           </span>
-          Application Under Review
+          Verification Required
         </div>
 
-        <h1 className="text-3xl font-black text-white mb-4">Your Seller Application is Pending</h1>
+        <h1 className="text-3xl font-black text-white mb-4">You Are Still Not Verified By The Admin</h1>
         <p className="text-slate-400 leading-relaxed mb-8">
-          Our admin team is reviewing your ID verification and store details. This usually takes
-          less than <strong className="text-amber-400">24 hours</strong>. You will receive an email
-          once your account is approved.
+          You can log in successfully, but seller features remain locked until admin verification is complete.
+          This usually takes less than <strong className="text-amber-400">24 hours</strong>. You will receive
+          an update as soon as your seller account is approved.
         </p>
 
         {/* Timeline */}

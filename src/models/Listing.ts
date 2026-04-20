@@ -36,7 +36,11 @@ const listingSchema = new Schema(
       branch: { type: [String], default: [] },
       course: { type: [String], default: [] },
       years: { type: [String], default: [] },
+      // Legacy field kept for backward compatibility with existing data.
       eventDate: { type: Date },
+      eventStartAt: { type: Date },
+      eventEndAt: { type: Date },
+      venue: { type: String, default: "" },
       eventQuestions: { type: [String], default: [] },
       ticketLimit: { type: Number, default: 0 },
     },
@@ -61,6 +65,7 @@ const listingSchema = new Schema(
 
 listingSchema.index({ type: 1, campus: 1, status: 1 });
 listingSchema.index({ createdAt: -1 });
+listingSchema.index({ "eventConfig.eventStartAt": 1 });
 listingSchema.index({ title: "text", description: "text", tags: "text" });
 
 type ListingDoc = InferSchemaType<typeof listingSchema>;

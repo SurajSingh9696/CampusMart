@@ -37,6 +37,8 @@ export default function CustomerOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Order | null>(null);
 
   useEffect(() => {
@@ -45,7 +47,21 @@ export default function CustomerOrdersPage() {
       .then((d) => { setOrders(d.orders || []); setLoading(false); });
   }, []);
 
-  const filtered = filter === "all" ? orders : orders.filter((o) => o.status === filter);
+  const filtered = (filter === "all" ? orders : orders.filter((o) => o.status === filter))
+    .filter((order) => {
+      const term = search.trim().toLowerCase();
+      if (!term) return true;
+      return (
+        order.listingId?.title?.toLowerCase().includes(term) ||
+        order.sellerId?.name?.toLowerCase().includes(term)
+      );
+    })
+    .sort((a, b) => {
+      if (sort === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (sort === "amount_desc") return b.amount - a.amount;
+      if (sort === "amount_asc") return a.amount - b.amount;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   const statusCounts = orders.reduce((acc, o) => {
     acc[o.status] = (acc[o.status] || 0) + 1;
     return acc;
@@ -64,24 +80,49 @@ export default function CustomerOrdersPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 flex-wrap">
-        {["all", "pending", "confirmed", "fulfilled", "cancelled"].map((s) => (
-          <button key={s} onClick={() => setFilter(s)}
-            className="px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-all"
-            style={{
-              background: filter === s ? "var(--primary)" : "white",
-              color: filter === s ? "white" : "var(--text-2)",
-              border: `1px solid ${filter === s ? "var(--primary)" : "var(--border)"}`,
-            }}>
-            {s}
-            {s !== "all" && statusCounts[s] ? (
-              <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-black"
-                style={{ background: filter === s ? "rgba(255,255,255,0.25)" : STATUS_BG[s], color: filter === s ? "white" : STATUS_COLOR[s] }}>
-                {statusCounts[s]}
-              </span>
-            ) : null}
-          </button>
-        ))}
+      <div className="card p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="input-icon-wrap flex-1">
+            <span className="icon-left material-symbols-outlined">search</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by item or seller"
+              className="input-dark"
+            />
+          </div>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="input-dark w-full sm:w-auto"
+            style={{ minWidth: "180px" }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="amount_desc">Amount high to low</option>
+            <option value="amount_asc">Amount low to high</option>
+          </select>
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          {["all", "pending", "confirmed", "fulfilled", "cancelled"].map((s) => (
+            <button key={s} onClick={() => setFilter(s)}
+              className="px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-all"
+              style={{
+                background: filter === s ? "var(--primary)" : "white",
+                color: filter === s ? "white" : "var(--text-2)",
+                border: `1px solid ${filter === s ? "var(--primary)" : "var(--border)"}`,
+              }}>
+              {s}
+              {s !== "all" && statusCounts[s] ? (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                  style={{ background: filter === s ? "rgba(255,255,255,0.25)" : STATUS_BG[s], color: filter === s ? "white" : STATUS_COLOR[s] }}>
+                  {statusCounts[s]}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Orders */}

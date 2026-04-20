@@ -21,6 +21,8 @@ export default function SellerOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     fetch("/api/orders/seller")
@@ -40,7 +42,22 @@ export default function SellerOrdersPage() {
     else toast.success(`Order marked as ${status}`);
   }
 
-  const filtered = filter === "all" ? orders : orders.filter((o) => o.status === filter);
+  const filtered = (filter === "all" ? orders : orders.filter((o) => o.status === filter))
+    .filter((order) => {
+      const term = search.trim().toLowerCase();
+      if (!term) return true;
+      return (
+        order.listingId?.title?.toLowerCase().includes(term) ||
+        order.customerId?.name?.toLowerCase().includes(term) ||
+        order.customerId?.email?.toLowerCase().includes(term)
+      );
+    })
+    .sort((a, b) => {
+      if (sort === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (sort === "amount_desc") return b.amount - a.amount;
+      if (sort === "amount_asc") return a.amount - b.amount;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   const pending = orders.filter((o) => o.status === "pending").length;
   const revenue = orders.filter((o) => o.status === "fulfilled").reduce((s, o) => s + o.amount, 0);
 
@@ -68,15 +85,41 @@ export default function SellerOrdersPage() {
         ))}
       </div>
 
-      {/* Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {["all", "pending", "confirmed", "fulfilled", "cancelled"].map((s) => (
-          <button key={s} onClick={() => setFilter(s)}
-            className="px-3 py-2 rounded-xl text-xs font-bold capitalize transition-all"
-            style={{ background: filter === s ? "var(--primary)" : "white", color: filter === s ? "white" : "var(--text-2)", border: `1px solid ${filter === s ? "var(--primary)" : "var(--border)"}` }}>
-            {s} {s === "pending" && pending > 0 && `(${pending})`}
-          </button>
-        ))}
+      {/* Controls */}
+      <div className="card p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="input-icon-wrap flex-1">
+            <span className="icon-left material-symbols-outlined">search</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by item or customer"
+              className="input-dark"
+            />
+          </div>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            aria-label="Sort seller orders"
+            className="input-dark w-full sm:w-auto"
+            style={{ minWidth: "190px" }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="amount_desc">Amount high to low</option>
+            <option value="amount_asc">Amount low to high</option>
+          </select>
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          {["all", "pending", "confirmed", "fulfilled", "cancelled"].map((s) => (
+            <button key={s} onClick={() => setFilter(s)}
+              className="px-3 py-2 rounded-xl text-xs font-bold capitalize transition-all"
+              style={{ background: filter === s ? "var(--primary)" : "white", color: filter === s ? "white" : "var(--text-2)", border: `1px solid ${filter === s ? "var(--primary)" : "var(--border)"}` }}>
+              {s} {s === "pending" && pending > 0 && `(${pending})`}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (

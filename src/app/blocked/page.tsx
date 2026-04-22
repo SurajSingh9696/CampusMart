@@ -2,8 +2,28 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 
 export default function BlockedPage() {
+  const [queryReason, setQueryReason] = useState("");
+  const { data: session } = useSession();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reason = params.get("reason")?.trim() || "";
+    setQueryReason(reason);
+  }, []);
+
+  const blockedReason = useMemo(() => {
+    if (queryReason) return queryReason;
+
+    const fromSession = session?.user?.blockedReason?.trim();
+    if (fromSession) return fromSession;
+
+    return "No additional reason was provided. Contact support for details.";
+  }, [queryReason, session?.user?.blockedReason]);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 animated-bg">
       <motion.div
@@ -12,21 +32,11 @@ export default function BlockedPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md text-center"
       >
-        <div
-          className="w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-8"
-          style={{
-            background: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.3)",
-            boxShadow: "0 0 40px rgba(239,68,68,0.15)",
-          }}
-        >
+        <div className="w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-8 bg-red-500/10 border border-red-500/30 shadow-[0_0_40px_rgba(239,68,68,0.15)]">
           <span className="material-symbols-outlined text-5xl text-red-400">block</span>
         </div>
 
-        <div
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 text-[10px] font-bold uppercase tracking-widest"
-          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#ef4444" }}
-        >
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 text-[10px] font-bold uppercase tracking-widest bg-red-500/10 border border-red-500/20 text-red-400">
           <span className="material-symbols-outlined text-xs">warning</span>
           Account Restricted
         </div>
@@ -37,10 +47,12 @@ export default function BlockedPage() {
           a policy violation or pending review.
         </p>
 
-        <div
-          className="rounded-2xl p-6 mb-8 text-left"
-          style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)" }}
-        >
+        <div className="rounded-2xl p-5 mb-6 text-left bg-slate-900/35 border border-slate-400/35">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Reason from Admin</p>
+          <p className="text-sm text-slate-200 leading-relaxed">{blockedReason}</p>
+        </div>
+
+        <div className="rounded-2xl p-6 mb-8 text-left bg-red-500/5 border border-red-500/20">
           <h3 className="text-red-400 font-bold mb-2 flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">info</span>
             What to do next

@@ -9,6 +9,7 @@ type Listing = {
   _id: string;
   title: string;
   description?: string;
+  approvalComment?: string;
   type: "product" | "project" | "notes" | "event";
   price?: number;
   isFree?: boolean;
@@ -258,6 +259,15 @@ export default function SellerMarketplacePage() {
                     </div>
 
                     <p className="text-slate-500 text-xs mt-2 line-clamp-2">{listing.description || "No description provided."}</p>
+
+                    {listing.status === "rejected" ? (
+                      <div className="mt-2 rounded-xl border border-red-200 bg-red-50 p-2.5">
+                        <p className="text-[10px] uppercase tracking-wide font-bold text-red-500">Rejection Reason</p>
+                        <p className="text-xs text-red-700 mt-1 line-clamp-3">
+                          {listing.approvalComment?.trim() || "Rejected by admin. Please update the listing and re-submit."}
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div className="grid grid-cols-3 gap-2 mt-4">
                       <div className="rounded-xl p-2" style={{ background: "#f8fafc" }}>

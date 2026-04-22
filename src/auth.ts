@@ -40,6 +40,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           sellerApprovalStatus: user.sellerApprovalStatus,
           isBlocked: user.isBlocked,
+          blockedReason: user.blockedReason,
           accountNumber: user.accountNumber,
           campus: user.campus,
           profileImageId: user.profileImageId ? user.profileImageId.toString() : undefined,
@@ -54,6 +55,7 @@ export const authOptions: NextAuthOptions = {
         token.role = user.role;
         token.sellerApprovalStatus = user.sellerApprovalStatus;
         token.isBlocked = user.isBlocked;
+        token.blockedReason = user.blockedReason;
         token.accountNumber = user.accountNumber;
         token.campus = user.campus;
         token.profileImageId = user.profileImageId;
@@ -87,6 +89,7 @@ export const authOptions: NextAuthOptions = {
         session.user.role = token.role;
         session.user.sellerApprovalStatus = token.sellerApprovalStatus;
         session.user.isBlocked = token.isBlocked;
+        session.user.blockedReason = token.blockedReason as string | undefined;
         session.user.accountNumber = token.accountNumber;
         session.user.campus = token.campus;
         session.user.profileImageId = token.profileImageId as string | undefined;
@@ -100,7 +103,11 @@ export const authOptions: NextAuthOptions = {
         return new URL("/pending-approval", baseUrl).toString();
       }
       if (user.isBlocked) {
-        return new URL("/blocked", baseUrl).toString();
+        const blockedUrl = new URL("/blocked", baseUrl);
+        if (typeof user.blockedReason === "string" && user.blockedReason.trim()) {
+          blockedUrl.searchParams.set("reason", user.blockedReason);
+        }
+        return blockedUrl.toString();
       }
       return true;
     },

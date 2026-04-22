@@ -14,15 +14,40 @@ type Order = {
   createdAt: string;
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  pending: "#f59e0b", confirmed: "#2563eb", fulfilled: "#16a34a", cancelled: "#dc2626",
+const STATUS_META: Record<Order["status"], { label: string; badgeClass: string; countClass: string }> = {
+  pending: {
+    label: "Pending",
+    badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
+    countClass: "bg-amber-50 text-amber-700",
+  },
+  confirmed: {
+    label: "Confirmed",
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
+    countClass: "bg-blue-50 text-blue-700",
+  },
+  fulfilled: {
+    label: "Fulfilled",
+    badgeClass: "bg-green-50 text-green-700 border-green-200",
+    countClass: "bg-green-50 text-green-700",
+  },
+  cancelled: {
+    label: "Cancelled",
+    badgeClass: "bg-red-50 text-red-700 border-red-200",
+    countClass: "bg-red-50 text-red-700",
+  },
 };
-const STATUS_BG: Record<string, string> = {
-  pending: "#fffbeb", confirmed: "#eff6ff", fulfilled: "#f0fdf4", cancelled: "#fef2f2",
-};
+
+const ORDER_STATUS_FILTERS = ["all", "pending", "confirmed", "fulfilled", "cancelled"] as const;
+type OrderFilter = (typeof ORDER_STATUS_FILTERS)[number];
+
 const TYPE_ICON: Record<string, string> = {
   event: "local_activity", notes: "menu_book", project: "terminal", product: "shopping_bag",
 };
+
+function formatAmount(amount: number) {
+  if (amount === 0) return "Free";
+  return `INR ${Math.round(amount).toLocaleString("en-IN")}`;
+}
 
 function getDetailHref(order: Order) {
   const id = order.listingId?._id;
@@ -36,7 +61,7 @@ function getDetailHref(order: Order) {
 export default function CustomerOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<OrderFilter>("all");
   const [sort, setSort] = useState("newest");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Order | null>(null);
@@ -66,6 +91,7 @@ export default function CustomerOrdersPage() {
     acc[o.status] = (acc[o.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+  const selectedStatusMeta = selected ? STATUS_META[selected.status] : null;
 
   return (
     <div className="space-y-6">
@@ -74,7 +100,7 @@ export default function CustomerOrdersPage() {
           <h1 className="text-2xl font-black text-slate-900">My Orders</h1>
           <p className="text-slate-500 text-sm mt-0.5">Track your purchases and bookings ({orders.length} total)</p>
         </div>
-        <Link href="/customer/products" className="btn-primary flex items-center gap-2 text-sm" style={{ padding: "0.6rem 1.2rem" }}>
+        <Link href="/customer/products" className="btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm">
           <span className="material-symbols-outlined text-xl">add_shopping_cart</span> Shop More
         </Link>
       </div>
@@ -94,8 +120,8 @@ export default function CustomerOrdersPage() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="input-dark w-full sm:w-auto"
-            style={{ minWidth: "180px" }}
+            aria-label="Sort orders"
+            className="input-dark w-full sm:w-auto sm:min-w-[180px]"
           >
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
@@ -105,18 +131,23 @@ export default function CustomerOrdersPage() {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          {["all", "pending", "confirmed", "fulfilled", "cancelled"].map((s) => (
-            <button key={s} onClick={() => setFilter(s)}
-              className="px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-all"
-              style={{
-                background: filter === s ? "var(--primary)" : "white",
-                color: filter === s ? "white" : "var(--text-2)",
-                border: `1px solid ${filter === s ? "var(--primary)" : "var(--border)"}`,
-              }}>
+          {ORDER_STATUS_FILTERS.map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold capitalize transition-all border ${
+                filter === s
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
               {s}
               {s !== "all" && statusCounts[s] ? (
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-black"
-                  style={{ background: filter === s ? "rgba(255,255,255,0.25)" : STATUS_BG[s], color: filter === s ? "white" : STATUS_COLOR[s] }}>
+                <span
+                  className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                    filter === s ? "bg-white/25 text-white" : STATUS_META[s].countClass
+                  }`}
+                >
                   {statusCounts[s]}
                 </span>
               ) : null}
@@ -130,10 +161,10 @@ export default function CustomerOrdersPage() {
         <div className="space-y-3">
           {[...Array(4)].map((_, i) => (
              <div key={i} className="card p-5 animate-pulse flex gap-4">
-               <div className="w-16 h-16 rounded-xl shrink-0" style={{ background: "#f1f5f9" }} />
+               <div className="w-16 h-16 rounded-xl shrink-0 bg-slate-100" />
                <div className="flex-1 space-y-2 py-1">
-                 <div className="h-4 w-1/3 rounded" style={{ background: "#f1f5f9" }} />
-                 <div className="h-3 w-1/4 rounded" style={{ background: "#f1f5f9" }} />
+                 <div className="h-4 w-1/3 rounded bg-slate-100" />
+                 <div className="h-3 w-1/4 rounded bg-slate-100" />
                </div>
              </div>
           ))}
@@ -143,42 +174,52 @@ export default function CustomerOrdersPage() {
           <span className="material-symbols-outlined text-5xl text-slate-300 block mb-3">inventory_2</span>
           <p className="text-slate-700 font-bold mb-1">No {filter === "all" ? "" : filter} orders yet</p>
           <p className="text-slate-400 text-sm mb-5">Start browsing the marketplace to place your first order.</p>
-          <Link href="/customer/products" className="btn-primary" style={{ padding: "0.6rem 1.4rem" }}>Browse Products</Link>
+          <Link href="/customer/products" className="btn-primary inline-flex items-center justify-center px-6 py-2.5">Browse Products</Link>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((order, i) => (
             <motion.div key={order._id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-              className="card p-5 flex items-center gap-4 cursor-pointer hover:shadow-md transition-shadow"
+              className="card p-4 sm:p-5 cursor-pointer hover:shadow-md transition-shadow"
               onClick={() => setSelected(order)}>
-              {/* Thumbnail */}
-              <div className="w-16 h-16 rounded-xl shrink-0 overflow-hidden" style={{ background: "#f1f5f9" }}>
-                {order.listingId?.mediaUrls?.[0] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={order.listingId.mediaUrls[0]} alt={order.listingId.title} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <span className="material-symbols-outlined text-2xl text-slate-400">
-                      {TYPE_ICON[order.listingId?.type] || "shopping_bag"}
-                    </span>
+              <div className="flex items-start gap-3 sm:gap-4">
+                <div className="w-16 h-16 rounded-xl shrink-0 overflow-hidden bg-slate-100 border border-slate-200">
+                  {order.listingId?.mediaUrls?.[0] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={order.listingId.mediaUrls[0]} alt={order.listingId.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="material-symbols-outlined text-2xl text-slate-400">
+                        {TYPE_ICON[order.listingId?.type] || "shopping_bag"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-slate-900 font-bold break-words line-clamp-2">{order.listingId?.title || "Item"}</p>
+                      <p className="text-slate-400 text-xs mt-0.5 break-words">
+                        Sold by {order.sellerId?.name || "Seller"}
+                        {order.listingId?.campus && <span className="ml-1.5 text-slate-300">· {order.listingId.campus}</span>}
+                      </p>
+                    </div>
+
+                    <div className="sm:text-right shrink-0">
+                      <p className={`font-black ${order.amount === 0 ? "text-green-600 text-sm" : "text-slate-900"}`}>
+                        {order.amount === 0 ? "FREE" : formatAmount(order.amount)}
+                      </p>
+                      <span className={`badge mt-1 text-[10px] border ${STATUS_META[order.status].badgeClass}`}>
+                        {STATUS_META[order.status].label}
+                      </span>
+                    </div>
                   </div>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-slate-900 font-bold truncate">{order.listingId?.title || "Item"}</p>
-                <p className="text-slate-400 text-xs mt-0.5">
-                  Sold by {order.sellerId?.name || "Seller"}
-                  {order.listingId?.campus && <span className="ml-2 text-slate-300">· {order.listingId.campus}</span>}
-                </p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-slate-900 font-black">
-                  {order.amount === 0 ? <span className="text-green-600 text-sm">FREE</span> : `₹${order.amount}`}
-                </p>
-                <span className="badge mt-1 text-[10px]"
-                  style={{ background: STATUS_BG[order.status], color: STATUS_COLOR[order.status], border: `1px solid ${STATUS_COLOR[order.status]}30` }}>
-                  {order.status}
-                </span>
+
+                  <p className="text-[11px] text-slate-400 mt-2">
+                    Ordered on {new Date(order.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                  </p>
+                </div>
               </div>
             </motion.div>
           ))}
@@ -189,50 +230,87 @@ export default function CustomerOrdersPage() {
       <AnimatePresence>
         {selected && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(6px)" }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 backdrop-blur-[6px] p-0 sm:p-4"
             onClick={(e) => e.target === e.currentTarget && setSelected(null)}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.97, opacity: 0 }}
-              className="w-full max-w-md bg-white rounded-2xl p-7 shadow-2xl border border-slate-100">
-              <div className="flex justify-between items-start mb-5">
-                <h3 className="text-lg font-black text-slate-900">Order Details</h3>
-                <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700">
+              className="w-full sm:max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 max-h-[92vh] overflow-hidden">
+              <div className="flex items-start justify-between px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Order Details</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Order ID: {selected._id.slice(-8).toUpperCase()}</p>
+                </div>
+                <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close order details">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
 
-              {/* Listing thumbnail in modal */}
-              {selected.listingId?.mediaUrls?.[0] && (
-                <div className="mb-4 rounded-xl overflow-hidden aspect-video">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={selected.listingId.mediaUrls[0]} alt={selected.listingId.title} className="w-full h-full object-cover" />
-                </div>
-              )}
-
-              <div className="space-y-3 mb-5">
-                {[
-                  ["Item", selected.listingId?.title || "—"],
-                  ["Type", selected.listingId?.type || "—"],
-                  ["Campus", selected.listingId?.campus || "—"],
-                  ["Seller", selected.sellerId?.name || "—"],
-                  ["Amount", selected.amount === 0 ? "FREE" : `₹${selected.amount}`],
-                  ["Qty", String(selected.quantity || 1)],
-                  ["Status", selected.status],
-                  ["Ordered on", new Date(selected.createdAt).toLocaleDateString("en-IN", { dateStyle: "long" })],
-                ].map(([label, val]) => (
-                  <div key={label} className="flex justify-between py-2 border-b border-slate-50">
-                    <span className="text-sm text-slate-400 font-medium">{label}</span>
-                    <span className="text-sm text-slate-900 font-bold capitalize">{val}</span>
+              <div className="px-4 sm:px-6 py-4 sm:py-5 overflow-y-auto max-h-[72vh] space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-[190px_minmax(0,1fr)] gap-4">
+                  <div className="rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 aspect-[4/3]">
+                    {selected.listingId?.mediaUrls?.[0] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={selected.listingId.mediaUrls[0]} alt={selected.listingId.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="material-symbols-outlined text-4xl text-slate-400">
+                          {TYPE_ICON[selected.listingId?.type] || "shopping_bag"}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                ))}
+
+                  <div className="min-w-0 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`badge text-[10px] border ${selectedStatusMeta?.badgeClass || "bg-slate-100 text-slate-700 border-slate-200"}`}>
+                        {selectedStatusMeta?.label || selected.status}
+                      </span>
+                      <span className="badge text-[10px] border bg-slate-50 text-slate-600 border-slate-200 capitalize">
+                        {selected.listingId?.type || "item"}
+                      </span>
+                    </div>
+
+                    <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug break-words">
+                      {selected.listingId?.title || "Item"}
+                    </h4>
+
+                    <p className="text-sm text-slate-500 break-words">
+                      Sold by <span className="font-semibold text-slate-700">{selected.sellerId?.name || "Seller"}</span>
+                      {selected.sellerId?.email ? <span className="text-slate-400"> ({selected.sellerId.email})</span> : null}
+                    </p>
+
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wider font-bold text-blue-600">Total Amount</p>
+                      <p className={`font-black mt-0.5 ${selected.amount === 0 ? "text-green-600 text-base" : "text-slate-900 text-lg"}`}>
+                        {selected.amount === 0 ? "FREE" : formatAmount(selected.amount)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    ["Campus", selected.listingId?.campus || "Not specified"],
+                    ["Quantity", String(selected.quantity || 1)],
+                    ["Ordered On", new Date(selected.createdAt).toLocaleDateString("en-IN", { dateStyle: "medium" })],
+                    ["Order Status", selectedStatusMeta?.label || selected.status],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{label}</p>
+                      <p className="text-sm text-slate-900 font-bold mt-0.5 break-words">{value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <Link href={getDetailHref(selected)}
-                className="btn-primary w-full flex items-center justify-center gap-2 text-sm"
-                style={{ padding: "0.75rem" }}>
-                <span className="material-symbols-outlined text-xl">open_in_new</span>
-                View Listing
-              </Link>
+              <div className="px-4 sm:px-6 py-4 border-t border-slate-100 bg-white">
+                <Link
+                  href={getDetailHref(selected)}
+                  className="btn-primary w-full flex items-center justify-center gap-2 text-sm py-3"
+                >
+                  <span className="material-symbols-outlined text-xl">open_in_new</span>
+                  View Listing
+                </Link>
+              </div>
             </motion.div>
           </motion.div>
         )}

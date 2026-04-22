@@ -5,6 +5,7 @@ import { Order } from "@/models/Order";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import { Types } from "mongoose";
+import { deriveListingBuyerPrice } from "@/lib/pricing";
 
 const SORT_MAP: Record<string, Record<string, 1 | -1>> = {
   newest: { createdAt: -1 },
@@ -16,6 +17,15 @@ const SORT_MAP: Record<string, Record<string, 1 | -1>> = {
   event_soonest: { "eventConfig.eventStartAt": 1, "eventConfig.eventDate": 1, createdAt: -1 },
   event_latest: { "eventConfig.eventStartAt": -1, "eventConfig.eventDate": -1, createdAt: -1 },
 };
+
+const ORDERED_STATUSES = [
+  "ready_for_payment",
+  "payout_completed",
+  "fulfilled_by_seller",
+  "fulfilled",
+  "confirmed",
+  "paid",
+];
 
 function escapeRegex(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -39,19 +49,39 @@ async function getOrderStatsMap(listingIds: string[]) {
     {
       $match: {
         listingId: { $in: objectIds },
-        status: { $in: ["confirmed", "fulfilled"] },
+        status: { $in: ORDERED_STATUSES },
       },
     },
     {
       $group: {
         _id: "$listingId",
         orderedCount: { $sum: { $ifNull: ["$quantity", 1] } },
-        revenueTotal: { $sum: "$amount" },
+        revenueTotal: { $sum: { $ifNull: ["$sellerAmount", "$amount"] } },
       },
     },
   ]);
 
   return new Map(rows.map((row) => [row._id.toString(), { orderedCount: row.orderedCount || 0, revenueTotal: row.revenueTotal || 0 }]));
+}
+
+function withViewerPricing<T extends { price?: number; isFree?: boolean; priceMarkupPercent?: number }>(
+  listing: T,
+  showBuyerPricing: boolean
+) {
+  const pricing = deriveListingBuyerPrice({
+    sellerPrice: Number(listing.price || 0),
+    isFree: Boolean(listing.isFree),
+    markupPercent: listing.priceMarkupPercent,
+  });
+
+  return {
+    ...listing,
+    sellerPrice: pricing.sellerPrice,
+    buyerPrice: pricing.buyerPrice,
+    platformFeeAmount: pricing.platformFeeAmount,
+    platformMarkupPercent: pricing.markupPercent,
+    price: showBuyerPricing ? pricing.buyerPrice : pricing.sellerPrice,
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -99,6 +129,9 @@ export async function GET(req: NextRequest) {
       query["notesConfig.subject"] = { $regex: escapeRegex(subject), $options: "i" };
     }
 
+    const shouldApplyBuyerPricing =
+      !mine && session?.user?.role !== "admin" && session?.user?.role !== "seller";
+
     // Popular sort needs computed order counts before pagination.
     if (sort === "popular") {
       const allListings = await Listing.find(query).lean();
@@ -119,7 +152,9 @@ export async function GET(req: NextRequest) {
         });
 
       const total = sorted.length;
-      const paginated = sorted.slice((page - 1) * limit, page * limit);
+      const paginated = sorted
+        .slice((page - 1) * limit, page * limit)
+        .map((listing) => withViewerPricing(listing, shouldApplyBuyerPricing));
 
       return NextResponse.json({
         listings: paginated,
@@ -143,11 +178,12 @@ export async function GET(req: NextRequest) {
     const statsMap = await getOrderStatsMap(listings.map((listing) => listing._id.toString()));
     const listingsWithStats = listings.map((listing) => {
       const stats = statsMap.get(listing._id.toString());
-      return {
+      const listingWithStats = {
         ...listing,
         orderedCount: stats?.orderedCount || 0,
         revenueTotal: stats?.revenueTotal || 0,
       };
+      return withViewerPricing(listingWithStats, shouldApplyBuyerPricing);
     });
 
     return NextResponse.json({

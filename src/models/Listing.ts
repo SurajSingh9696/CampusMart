@@ -17,6 +17,7 @@ const listingSchema = new Schema(
     previewUrls: { type: [String], default: [] },
     resourceUrl: { type: String, default: "" },
     price: { type: Number, min: 0, default: 0 },
+    priceMarkupPercent: { type: Number, min: 5, max: 10, default: 8 },
     isFree: { type: Boolean, default: false },
     isAuction: { type: Boolean, default: false },
     auctionStartPrice: { type: Number, min: 0, default: 0 },

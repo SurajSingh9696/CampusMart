@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Types } from "mongoose";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/auth";
 import { connectDB } from "@/lib/db";
 import { Listing } from "@/models/Listing";
 import { Notification } from "@/models/Notification";
 import { requireAuth, requireRole } from "@/lib/auth-guards";
+import { deriveListingBuyerPrice } from "@/lib/pricing";
 
 const decisionSchema = z.object({
   action: z.enum(["approve", "reject"]),
@@ -72,6 +75,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Invalid listing id" }, { status: 400 });
   }
 
+  const session = await getServerSession(authOptions);
+
   await connectDB();
   const listing = await Listing.findById(id)
     .populate("sellerId", "name campus shop.shopName")
@@ -79,7 +84,30 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   if (!listing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({ listing });
+  const sellerId = typeof listing.sellerId === "object" && listing.sellerId !== null && "_id" in listing.sellerId
+    ? String((listing.sellerId as { _id: unknown })._id)
+    : String(listing.sellerId);
+
+  const canSeeSellerPrice = Boolean(
+    session?.user && (session.user.role === "admin" || session.user.id === sellerId)
+  );
+
+  const pricing = deriveListingBuyerPrice({
+    sellerPrice: Number(listing.price || 0),
+    isFree: Boolean(listing.isFree),
+    markupPercent: Number((listing as { priceMarkupPercent?: number }).priceMarkupPercent),
+  });
+
+  const withViewerPrice = {
+    ...listing,
+    sellerPrice: pricing.sellerPrice,
+    buyerPrice: pricing.buyerPrice,
+    platformFeeAmount: pricing.platformFeeAmount,
+    platformMarkupPercent: pricing.markupPercent,
+    price: canSeeSellerPrice ? pricing.sellerPrice : pricing.buyerPrice,
+  };
+
+  return NextResponse.json({ listing: withViewerPrice });
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

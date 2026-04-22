@@ -8,6 +8,7 @@ declare module "next-auth" {
       role: Role;
       sellerApprovalStatus?: SellerApprovalStatus;
       isBlocked: boolean;
+      blockedReason?: string;
       accountNumber: string;
       campus: string;
       profileImageId?: string;
@@ -18,6 +19,7 @@ declare module "next-auth" {
     role: Role;
     sellerApprovalStatus?: SellerApprovalStatus;
     isBlocked: boolean;
+    blockedReason?: string;
     accountNumber: string;
     campus: string;
     profileImageId?: string;
@@ -30,6 +32,7 @@ declare module "next-auth/jwt" {
     role: Role;
     sellerApprovalStatus?: SellerApprovalStatus;
     isBlocked: boolean;
+    blockedReason?: string;
     accountNumber: string;
     campus: string;
     profileImageId?: string;

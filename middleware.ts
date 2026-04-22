@@ -17,23 +17,42 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
-  if (!isProtected) return NextResponse.next();
+  const isApiRequest = pathname.startsWith("/api");
+  const isAuthPublicPath =
+    pathname === "/" ||
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/blocked") ||
+    pathname.startsWith("/pending-approval") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/colleges") ||
+    pathname.startsWith("/api/register") ||
+    pathname.startsWith("/service-worker.js");
 
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) {
-    if (pathname.startsWith("/api")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const blockedReason = typeof token?.blockedReason === "string" ? token.blockedReason : "";
+  if (token?.isBlocked && !pathname.startsWith("/blocked") && !pathname.startsWith("/auth")) {
+    if (isApiRequest && !pathname.startsWith("/api/auth")) {
+      return NextResponse.json({ error: "Blocked by admin", reason: blockedReason }, { status: 403 });
     }
-    const loginUrl = new URL("/auth/login", request.url);
-    return NextResponse.redirect(loginUrl);
+
+    const blockedUrl = new URL("/blocked", request.url);
+    if (blockedReason) blockedUrl.searchParams.set("reason", blockedReason);
+    return NextResponse.redirect(blockedUrl);
   }
 
-  if (token.isBlocked) {
-    if (pathname.startsWith("/api")) {
-      return NextResponse.json({ error: "Blocked by admin" }, { status: 403 });
+  if (!isProtected && isAuthPublicPath) return NextResponse.next();
+
+  if (!token) {
+    if (isApiRequest) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const blockedUrl = new URL("/blocked", request.url);
-    return NextResponse.redirect(blockedUrl);
+    if (!isProtected) return NextResponse.next();
+
+    const loginUrl = new URL("/auth/login", request.url);
+    return NextResponse.redirect(loginUrl);
   }
 
   if (pathname.startsWith("/admin") && token.role !== "admin") {
@@ -64,14 +83,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/dashboard/:path*",
-    "/admin/:path*",
-    "/customer/:path*",
-    "/seller/:path*",
-    "/api/admin/:path*",
-    "/api/listings/:path*",
-    "/api/payment/:path*",
-    "/api/profile/:path*",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

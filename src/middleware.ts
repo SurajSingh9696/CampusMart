@@ -8,7 +8,11 @@ export default withAuth(
 
     // Block blocked users from protected routes
     if (token?.isBlocked && !pathname.startsWith("/blocked") && !pathname.startsWith("/auth")) {
-      return NextResponse.redirect(new URL("/blocked", req.url));
+      const blockedUrl = new URL("/blocked", req.url);
+      if (typeof token.blockedReason === "string" && token.blockedReason.trim()) {
+        blockedUrl.searchParams.set("reason", token.blockedReason);
+      }
+      return NextResponse.redirect(blockedUrl);
     }
 
     // Seller verification gate

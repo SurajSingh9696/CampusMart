@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatedTabs3D } from "@/components/ui/AnimatedTabs3D";
 import { StatCard } from "@/components/ui/StatCard";
 import { BookOpenText, Heart, Package, Ticket } from "lucide-react";
+import { startListingCheckout } from "@/lib/client-checkout";
 
 type Listing = {
   _id: string;
@@ -27,6 +28,19 @@ type CollegeLookup = {
   shortCode: string;
 };
 
+type ListingGridProps = {
+  data: Listing[];
+  selectedCampus: string;
+  userCampus: string;
+  query: string;
+  sortBy: "newest" | "price_asc" | "price_desc";
+  wishlist: Set<string>;
+  onToggleWishlist: (item: Listing) => void;
+  onBuy: (item: Listing) => void;
+  formatCampus: (campus: string) => string;
+  normalizeCampus: (campus: string) => string;
+};
+
 function ListingGrid({
   data,
   selectedCampus,
@@ -38,28 +52,32 @@ function ListingGrid({
   onBuy,
   formatCampus,
   normalizeCampus,
-}: {
-  data: Listing[];
-  selectedCampus: string;
-  userCampus: string;
-  query: string;
-  sortBy: "newest" | "price_asc" | "price_desc";
-  wishlist: Set<string>;
-  onToggleWishlist: (item: Listing) => void;
-  onBuy: (item: Listing) => void;
-  formatCampus: (campus: string) => string;
-  normalizeCampus: (campus: string) => string;
-}) {
+}: ListingGridProps) {
   const filtered = useMemo(() => {
-    const effectiveSelectedCampus = selectedCampus === "Global" ? "Global" : normalizeCampus(selectedCampus);
-    const byCampus = effectiveSelectedCampus === "Global" ? data : data.filter((l) => l.campus === effectiveSelectedCampus);
-    const byQuery = byCampus.filter((l) => l.title.toLowerCase().includes(query.toLowerCase()));
+    const normalizedSelectedCampus = selectedCampus === "Global" ? "Global" : normalizeCampus(selectedCampus);
 
-    return byQuery.sort((a, b) => {
-      if (sortBy === "price_asc") return a.price - b.price;
-      if (sortBy === "price_desc") return b.price - a.price;
-      return 0;
+    const campusFiltered = data.filter((item) => {
+      if (normalizedSelectedCampus === "Global") return true;
+      return normalizeCampus(item.campus) === normalizedSelectedCampus;
     });
+
+    const queryFiltered = campusFiltered.filter((item) => {
+      const term = query.trim().toLowerCase();
+      if (!term) return true;
+      return (
+        item.title.toLowerCase().includes(term) ||
+        item.description.toLowerCase().includes(term)
+      );
+    });
+
+    const sorted = [...queryFiltered];
+    if (sortBy === "price_asc") {
+      sorted.sort((a, b) => (a.price || 0) - (b.price || 0));
+    } else if (sortBy === "price_desc") {
+      sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+    }
+
+    return sorted;
   }, [data, normalizeCampus, query, selectedCampus, sortBy]);
 
   const effectiveSelectedCampus = selectedCampus === "Global" ? "Global" : normalizeCampus(selectedCampus);
@@ -191,24 +209,23 @@ export function CustomerDashboardClient({ listings, userCampus, wishlistKeys }: 
   }
 
   async function onBuy(item: Listing) {
-    setStatus("Creating order...");
-    const response = await fetch("/api/payment/order", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemType: item.type, itemId: item._id }),
-    });
+    try {
+      setStatus("Opening checkout...");
+      const result = await startListingCheckout({
+        listingId: item._id,
+        quantity: 1,
+        itemType: item.type,
+      });
 
-    const result = await response.json();
-    if (!response.ok) {
-      setStatus(result.error || "Unable to create order.");
-      return;
+      setStatus(
+        result.provider === "fallback"
+          ? "Order placed in fallback mode."
+          : "Payment successful and order placed."
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to complete checkout.";
+      setStatus(message);
     }
-
-    setStatus(
-      result.provider === "fallback"
-        ? "Test payment completed with fallback mode."
-        : `Razorpay order created: ${result.razorpayOrderId}`
-    );
   }
 
   return (

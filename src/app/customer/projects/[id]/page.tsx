@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import { startListingCheckout } from "@/lib/client-checkout";
 
 type Project = {
   _id: string;
@@ -97,17 +98,23 @@ export default function ProjectDetailPage() {
     if (!project) return;
     setBuyLoading(true);
     try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId: project._id, quantity: 1 }),
+      const result = await startListingCheckout({
+        listingId: project._id,
+        quantity: 1,
+        itemType: project.type as "product" | "project" | "notes" | "event",
       });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error || "Order failed"); return; }
-      toast.success("Project purchased! 🎉");
+
+      toast.success(
+        result.provider === "fallback"
+          ? "Project order created"
+          : "Payment successful. Project order created"
+      );
       setBuyModal(false);
       router.push("/customer/orders");
-    } catch { toast.error("Something went wrong"); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to complete checkout";
+      toast.error(message);
+    }
     finally { setBuyLoading(false); }
   }
 

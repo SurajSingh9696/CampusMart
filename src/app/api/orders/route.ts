@@ -5,7 +5,10 @@ import { connectDB } from "@/lib/db";
 import { Listing } from "@/models/Listing";
 import { Order } from "@/models/Order";
 import { Notification } from "@/models/Notification";
+import { User } from "@/models/User";
 import { Types } from "mongoose";
+import { deriveOrderAmounts } from "@/lib/pricing";
+import { ORDER_STATUS, PAYMENT_STATUS, normalizeLegacyOrderStatus } from "@/lib/order-workflow";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -36,27 +39,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "You cannot buy your own listing" }, { status: 400 });
     }
 
-    const totalAmount = listing.isFree ? 0 : listing.price * quantity;
+    const [buyer, seller] = await Promise.all([
+      User.findById(session.user.id)
+        .select("accountNumber idCardNumber idCardImageId campus")
+        .lean(),
+      User.findById(listing.sellerId)
+        .select("shop.payoutUpi")
+        .lean(),
+    ]);
 
-    // Create the order
+    const amounts = deriveOrderAmounts({
+      sellerUnitPrice: listing.price,
+      quantity,
+      isFree: listing.isFree,
+      markupPercent: listing.priceMarkupPercent,
+    });
+
+    // Direct /api/orders callers are treated as fallback-paid to preserve legacy UX.
     const order = await Order.create({
       buyerId: session.user.id,
       sellerId: listing.sellerId,
       listingId: listing._id,
-      amount: totalAmount,
+      amount: amounts.buyerAmount,
+      sellerAmount: amounts.sellerAmount,
+      platformFeeAmount: amounts.platformFeeAmount,
+      priceMarkupPercent: amounts.markupPercent,
       currency: "INR",
       paymentProvider: "fallback",
       paymentReference: `CAMPUS-${Date.now()}`,
-      status: listing.isFree ? "confirmed" : "pending",
-      purchaseCampus: session.user.campus || listing.campus,
-      quantity,
+      paymentCaptureReference: `CAMPUS_CAPTURE-${Date.now()}`,
+      paymentStatus: PAYMENT_STATUS.paid,
+      paidAt: new Date(),
+      status: ORDER_STATUS.pendingSellerAction,
+      purchaseCampus: buyer?.campus || session.user.campus || listing.campus,
+      quantity: amounts.quantity,
+      sellerPayoutUpi: seller?.shop?.payoutUpi || "",
+      buyerAccountNumberSnapshot: buyer?.accountNumber || "",
+      buyerIdCardNumberSnapshot: buyer?.idCardNumber || "",
+      buyerIdCardImageIdSnapshot: buyer?.idCardImageId,
     });
 
     // Notify the seller
     await Notification.create({
       userId: listing.sellerId,
       title: "New Order Received!",
-      message: `${session.user.name} placed an order for "${listing.title}". Amount: ₹${totalAmount}`,
+      message: `${session.user.name} placed and paid for "${listing.title}". Amount: ₹${amounts.buyerAmount}`,
       category: "order",
     });
 
@@ -93,7 +120,15 @@ export async function GET(req: NextRequest) {
       .lean();
 
     // Map buyerId -> customerId for UI compatibility
-    const mapped = orders.map((o: Record<string, unknown>) => ({ ...o, customerId: o.buyerId }));
+    const mapped = orders.map((order: Record<string, unknown>) => ({
+      ...order,
+      customerId: order.buyerId,
+      status: normalizeLegacyOrderStatus(String(order.status || "")),
+      cancelReason:
+        String(order.cancelReason || "") ||
+        String(order.customerCancelReason || "") ||
+        String(order.sellerCancelReason || ""),
+    }));
     const total = await Order.countDocuments(query);
 
     return NextResponse.json({ orders: mapped, total, page });

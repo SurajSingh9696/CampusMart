@@ -3,16 +3,23 @@ import { z } from "zod";
 import { Types } from "mongoose";
 import { requireRole } from "@/lib/auth-guards";
 import { connectDB } from "@/lib/db";
-import { Product } from "@/models/market/Product";
-import { Project } from "@/models/market/Project";
-import { Note } from "@/models/market/Note";
-import { Event } from "@/models/market/Event";
+import { Listing } from "@/models/Listing";
 import { Order } from "@/models/Order";
+import { Notification } from "@/models/Notification";
+import { User } from "@/models/User";
 import { getRazorpayClient } from "@/lib/payment";
+import { env } from "@/lib/env";
+import { deriveOrderAmounts } from "@/lib/pricing";
+import { ORDER_STATUS, PAYMENT_STATUS } from "@/lib/order-workflow";
 
 const schema = z.object({
-  itemType: z.enum(["product", "project", "notes", "event"]),
-  itemId: z.string().min(10),
+  listingId: z.string().min(10).optional(),
+  itemType: z.enum(["product", "project", "notes", "event"]).optional(),
+  itemId: z.string().min(10).optional(),
+  quantity: z.number().int().min(1).max(20).optional().default(1),
+}).refine((value) => Boolean(value.listingId || value.itemId), {
+  message: "listingId or itemId is required",
+  path: ["listingId"],
 });
 
 export async function POST(request: Request) {
@@ -23,108 +30,143 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = schema.parse(body);
 
-    if (!Types.ObjectId.isValid(data.itemId)) {
-      return NextResponse.json({ error: "Invalid item id" }, { status: 400 });
-    }
-
     await connectDB();
 
-    let normalized:
-      | {
-          _id: string;
-          sellerId: string;
-          amount: number;
-          oneBuyerOnly?: boolean;
-          soldToCustomerId?: unknown;
-        }
-      | null = null;
-
-    if (data.itemType === "product") {
-      const product = await Product.findById(data.itemId).lean();
-      if (!product || product.status !== "live") {
-        return NextResponse.json({ error: "Item not available" }, { status: 404 });
-      }
-      normalized = { _id: product._id.toString(), sellerId: product.sellerId.toString(), amount: product.price };
-    } else if (data.itemType === "project") {
-      const project = await Project.findById(data.itemId).lean();
-      if (!project || project.status !== "live") {
-        return NextResponse.json({ error: "Item not available" }, { status: 404 });
-      }
-      normalized = {
-        _id: project._id.toString(),
-        sellerId: project.sellerId.toString(),
-        amount: project.isFree ? 0 : project.price,
-        oneBuyerOnly: project.oneBuyerOnly,
-        soldToCustomerId: project.soldToCustomerId,
-      };
-    } else if (data.itemType === "notes") {
-      const note = await Note.findById(data.itemId).lean();
-      if (!note || note.status !== "live") {
-        return NextResponse.json({ error: "Item not available" }, { status: 404 });
-      }
-      normalized = { _id: note._id.toString(), sellerId: note.sellerId.toString(), amount: note.isFree ? 0 : note.price };
-    } else {
-      const event = await Event.findById(data.itemId).lean();
-      if (!event || event.status !== "live") {
-        return NextResponse.json({ error: "Item not available" }, { status: 404 });
-      }
-      normalized = { _id: event._id.toString(), sellerId: event.sellerId.toString(), amount: event.isFree ? 0 : event.ticketPrice };
+    const listingId = (data.listingId || data.itemId || "").trim();
+    if (!Types.ObjectId.isValid(listingId)) {
+      return NextResponse.json({ error: "Invalid listing id" }, { status: 400 });
     }
 
-    if (normalized.oneBuyerOnly && normalized.soldToCustomerId) {
+    const listing = await Listing.findById(listingId)
+      .select("_id sellerId title status price isFree type campus priceMarkupPercent soldToCustomerId projectConfig")
+      .lean();
+    if (!listing || listing.status !== "live") {
+      return NextResponse.json({ error: "Item not available" }, { status: 404 });
+    }
+
+    if (listing.sellerId.toString() === guard.session.user.id) {
+      return NextResponse.json({ error: "You cannot buy your own listing" }, { status: 400 });
+    }
+
+    const isProjectOneBuyerOnly = Boolean(listing.type === "project" && listing.projectConfig?.oneBuyerOnly);
+    if (isProjectOneBuyerOnly && listing.soldToCustomerId) {
       return NextResponse.json({ error: "Project already sold" }, { status: 409 });
     }
 
-    const amount = normalized.amount;
+    const [buyer, seller] = await Promise.all([
+      User.findById(guard.session.user.id)
+        .select("accountNumber idCardNumber idCardImageId campus")
+        .lean(),
+      User.findById(listing.sellerId)
+        .select("shop.payoutUpi")
+        .lean(),
+    ]);
+
+    if (!buyer) {
+      return NextResponse.json({ error: "Buyer account not found" }, { status: 404 });
+    }
+
+    const amounts = deriveOrderAmounts({
+      sellerUnitPrice: listing.price,
+      quantity: data.quantity,
+      isFree: listing.isFree,
+      markupPercent: listing.priceMarkupPercent,
+    });
+
     const razorpay = getRazorpayClient();
 
-    if (razorpay && amount > 0) {
+    if (razorpay && amounts.buyerAmount > 0) {
       const rzOrder = await razorpay.orders.create({
-        amount: Math.round(amount * 100),
+        amount: Math.round(amounts.buyerAmount * 100),
         currency: "INR",
         receipt: `cmp_${Date.now()}`,
+        notes: {
+          listingId: listing._id.toString(),
+          buyerId: guard.session.user.id,
+          quantity: String(amounts.quantity),
+        },
       });
 
       const order = await Order.create({
         buyerId: guard.session.user.id,
-        sellerId: normalized.sellerId,
-        listingId: normalized._id,
-        amount,
+        sellerId: listing.sellerId,
+        listingId: listing._id,
+        amount: amounts.buyerAmount,
+        sellerAmount: amounts.sellerAmount,
+        platformFeeAmount: amounts.platformFeeAmount,
+        priceMarkupPercent: amounts.markupPercent,
+        currency: "INR",
         paymentProvider: "razorpay",
         paymentReference: rzOrder.id,
-        status: "created",
-        purchaseCampus: guard.session.user.campus,
+        paymentStatus: PAYMENT_STATUS.created,
+        status: ORDER_STATUS.created,
+        purchaseCampus: buyer.campus || guard.session.user.campus,
+        sellerPayoutUpi: seller?.shop?.payoutUpi || "",
+        buyerAccountNumberSnapshot: buyer.accountNumber || "",
+        buyerIdCardNumberSnapshot: buyer.idCardNumber || "",
+        buyerIdCardImageIdSnapshot: buyer.idCardImageId,
+        quantity: amounts.quantity,
       });
 
       return NextResponse.json({
         provider: "razorpay",
         orderId: order._id,
         razorpayOrderId: rzOrder.id,
-        amount,
+        razorpayKeyId: env.RAZORPAY_KEY_ID,
+        amount: amounts.buyerAmount,
+        sellerAmount: amounts.sellerAmount,
+        platformFeeAmount: amounts.platformFeeAmount,
       });
     }
 
-    const order = await Order.create({
+    const fallbackOrder = await Order.create({
       buyerId: guard.session.user.id,
-      sellerId: normalized.sellerId,
-      listingId: normalized._id,
-      amount,
+      sellerId: listing.sellerId,
+      listingId: listing._id,
+      amount: amounts.buyerAmount,
+      sellerAmount: amounts.sellerAmount,
+      platformFeeAmount: amounts.platformFeeAmount,
+      priceMarkupPercent: amounts.markupPercent,
+      currency: "INR",
       paymentProvider: "fallback",
       paymentReference: `fallback_${Date.now()}`,
-      status: "paid",
-      purchaseCampus: guard.session.user.campus,
+      paymentStatus: PAYMENT_STATUS.paid,
+      paymentCaptureReference: `fallback_capture_${Date.now()}`,
+      paidAt: new Date(),
+      status: ORDER_STATUS.pendingSellerAction,
+      purchaseCampus: buyer.campus || guard.session.user.campus,
+      sellerPayoutUpi: seller?.shop?.payoutUpi || "",
+      buyerAccountNumberSnapshot: buyer.accountNumber || "",
+      buyerIdCardNumberSnapshot: buyer.idCardNumber || "",
+      buyerIdCardImageIdSnapshot: buyer.idCardImageId,
+      quantity: amounts.quantity,
+    });
+
+    await Notification.create({
+      userId: listing.sellerId,
+      title: "New Paid Order",
+      message: `${guard.session.user.name} placed and paid for "${listing.title}". Please review and accept/cancel the order.`,
+      category: "order",
     });
 
     return NextResponse.json({
       provider: "fallback",
-      orderId: order._id,
-      amount,
-      message: "Fallback test payment succeeded because Razorpay keys are not configured.",
+      orderId: fallbackOrder._id,
+      amount: amounts.buyerAmount,
+      sellerAmount: amounts.sellerAmount,
+      platformFeeAmount: amounts.platformFeeAmount,
+      message: "Payment captured in fallback mode. Seller has been notified.",
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.flatten() }, { status: 400 });
+      const flattened = error.flatten();
+      const message =
+        flattened.formErrors[0] ||
+        Object.values(flattened.fieldErrors).flat()[0] ||
+        "Invalid payment payload";
+      return NextResponse.json({ error: message, details: flattened }, { status: 400 });
     }
+    console.error("[payment order POST]", error);
     return NextResponse.json({ error: "Unable to create payment order" }, { status: 500 });
   }
 }

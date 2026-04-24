@@ -13,6 +13,10 @@ const decisionSchema = z.object({
   comment: z.string().trim().max(500).optional(),
 });
 
+const markupSchema = z.object({
+  priceMarkupPercent: z.coerce.number().min(5).max(10),
+});
+
 function firstZodMessage(error: z.ZodError) {
   const flattened = error.flatten();
   return (
@@ -169,5 +173,55 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     console.error("[admin listings PATCH]", error);
     return NextResponse.json({ error: "Unable to update listing" }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user || session.user.role !== "admin") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    await connectDB();
+    const { id: rawId } = await params;
+    const id = rawId.trim();
+
+    if (!Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid listing id" }, { status: 400 });
+    }
+
+    const body = await req.json();
+    const data = markupSchema.parse(body);
+
+    const listing = await Listing.findById(id);
+    if (!listing) {
+      return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+    }
+
+    listing.priceMarkupPercent = data.priceMarkupPercent;
+    await listing.save();
+
+    await Notification.create({
+      userId: listing.sellerId,
+      title: "Listing buyer markup updated",
+      message: `Admin set buyer markup for \"${listing.title}\" to ${data.priceMarkupPercent.toFixed(
+        2
+      )}%.`,
+      category: "listing_moderation",
+    });
+
+    return NextResponse.json({
+      ok: true,
+      listingId: listing._id,
+      priceMarkupPercent: listing.priceMarkupPercent,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: firstZodMessage(error), details: error.flatten() }, { status: 400 });
+    }
+
+    console.error("[admin listings PUT]", error);
+    return NextResponse.json({ error: "Unable to update listing markup" }, { status: 500 });
   }
 }

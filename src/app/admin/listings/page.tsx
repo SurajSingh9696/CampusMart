@@ -9,6 +9,7 @@ type Listing = {
   title: string;
   type: string;
   price: number;
+  priceMarkupPercent?: number;
   campus?: string;
   tags?: string[];
   isFree?: boolean;
@@ -107,7 +108,15 @@ export default function AdminListingsPage() {
   const [preview, setPreview] = useState<Listing | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [markupLoadingId, setMarkupLoadingId] = useState<string | null>(null);
+  const [markupDraft, setMarkupDraft] = useState("8");
   const [rejectDialog, setRejectDialog] = useState<RejectDialogState | null>(null);
+
+  useEffect(() => {
+    if (!preview) return;
+    const raw = typeof preview.priceMarkupPercent === "number" ? preview.priceMarkupPercent : 8;
+    setMarkupDraft(raw.toFixed(2));
+  }, [preview?._id, preview?.priceMarkupPercent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -279,6 +288,51 @@ export default function AdminListingsPage() {
     }
   }
 
+  async function saveMarkupPercent(id: string) {
+    if (markupLoadingId) return;
+
+    const nextValue = Number.parseFloat(markupDraft);
+    if (!Number.isFinite(nextValue) || nextValue < 5 || nextValue > 10) {
+      toast.error("Markup must be between 5% and 10%.");
+      return;
+    }
+
+    const rounded = Number(nextValue.toFixed(2));
+    setMarkupLoadingId(id);
+
+    try {
+      const res = await fetch(`/api/admin/listings/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceMarkupPercent: rounded }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.error || "Failed to update markup");
+        return;
+      }
+
+      setListings((current) =>
+        current.map((listing) =>
+          listing._id === id ? { ...listing, priceMarkupPercent: rounded } : listing
+        )
+      );
+
+      setPreview((current) =>
+        current && current._id === id
+          ? { ...current, priceMarkupPercent: rounded }
+          : current
+      );
+
+      toast.success("Buyer markup updated");
+    } catch {
+      toast.error("Failed to update markup");
+    } finally {
+      setMarkupLoadingId(null);
+    }
+  }
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return listings;
@@ -312,6 +366,17 @@ export default function AdminListingsPage() {
     if (!preview) return [];
     return getListingFileLinks(preview);
   }, [preview]);
+
+  const previewBuyerAmount = useMemo(() => {
+    if (!preview) return 0;
+    if (preview.isFree || preview.price <= 0) return 0;
+    const markup = Number.isFinite(Number.parseFloat(markupDraft))
+      ? Number.parseFloat(markupDraft)
+      : typeof preview.priceMarkupPercent === "number"
+        ? preview.priceMarkupPercent
+        : 8;
+    return Number((preview.price * (1 + markup / 100)).toFixed(2));
+  }, [preview, markupDraft]);
 
   return (
     <div className="space-y-6">
@@ -459,6 +524,38 @@ export default function AdminListingsPage() {
                     <span className="text-slate-800 font-bold capitalize">{v}</span>
                   </div>
                 ))}
+
+                <div className="pt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-slate-700 text-xs font-semibold uppercase tracking-wider">Buyer Markup</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Admin controlled margin for buyer-visible price (5% to 10%).</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={5}
+                        max={10}
+                        step={0.25}
+                        value={markupDraft}
+                        onChange={(event) => setMarkupDraft(event.target.value)}
+                        className="w-20 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm font-semibold text-slate-700 focus:border-blue-500 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => void saveMarkupPercent(preview._id)}
+                        disabled={markupLoadingId === preview._id}
+                        className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 text-xs text-slate-600">
+                    <p>Seller Price: {preview.price === 0 ? "Free" : `₹${preview.price.toLocaleString("en-IN")}`}</p>
+                    <p>Buyer Sees: {previewBuyerAmount === 0 ? "Free" : `₹${previewBuyerAmount.toLocaleString("en-IN")}`}</p>
+                  </div>
+                </div>
                 {preview.type === "event" ? (
                   <div className="pt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <p className="text-slate-700 text-xs font-semibold uppercase tracking-wider">Event Details</p>

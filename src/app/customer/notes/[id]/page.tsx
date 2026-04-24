@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import { startListingCheckout } from "@/lib/client-checkout";
 
 type Note = {
   _id: string;
@@ -93,17 +94,23 @@ export default function NoteDetailPage() {
     if (!note) return;
     setBuyLoading(true);
     try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listingId: note._id, quantity: 1 }),
+      const result = await startListingCheckout({
+        listingId: note._id,
+        quantity: 1,
+        itemType: note.type as "product" | "project" | "notes" | "event",
       });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error || "Order failed"); return; }
-      toast.success("Notes purchased! Check your orders. 🎉");
+
+      toast.success(
+        result.provider === "fallback"
+          ? "Notes added to your orders"
+          : "Payment successful. Notes order created"
+      );
       setBuyModal(false);
       router.push("/customer/orders");
-    } catch { toast.error("Something went wrong"); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to complete checkout";
+      toast.error(message);
+    }
     finally { setBuyLoading(false); }
   }
 

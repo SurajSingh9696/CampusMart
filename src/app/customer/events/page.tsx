@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import { startListingCheckout } from "@/lib/client-checkout";
 
 type Listing = {
   _id: string;
@@ -125,6 +126,36 @@ export default function EventsPage() {
       return aStart - bStart;
     });
   }, [events, tab, sort]);
+
+  async function completeBooking() {
+    if (!selected) return;
+    if (isEventPast(selected)) {
+      toast.error("This event has already ended.");
+      return;
+    }
+
+    setBuyLoading(true);
+    try {
+      const result = await startListingCheckout({
+        listingId: selected._id,
+        quantity: qty,
+        itemType: "event",
+      });
+
+      toast.success(
+        result.provider === "fallback"
+          ? "Event booked successfully"
+          : "Payment successful. Event booked"
+      );
+      setSelected(null);
+      router.push("/customer/orders");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to complete booking";
+      toast.error(message);
+    } finally {
+      setBuyLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -379,33 +410,7 @@ export default function EventsPage() {
                   disabled={buyLoading}
                   className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-70"
                   style={{ padding: "1rem" }}
-                  onClick={async () => {
-                    if (isEventPast(selected)) {
-                      toast.error("This event has already ended.");
-                      return;
-                    }
-
-                    setBuyLoading(true);
-                    try {
-                      const res = await fetch("/api/orders", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ listingId: selected._id, quantity: qty }),
-                      });
-                      const data = await res.json();
-                      if (!res.ok) {
-                        toast.error(data.error || "Booking failed");
-                        return;
-                      }
-                      toast.success("Event booked successfully");
-                      setSelected(null);
-                      router.push("/customer/orders");
-                    } catch {
-                      toast.error("Something went wrong");
-                    } finally {
-                      setBuyLoading(false);
-                    }
-                  }}
+                  onClick={() => void completeBooking()}
                 >
                   {buyLoading ? (
                     <><span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />Processing...</>
